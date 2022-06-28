@@ -1,4 +1,7 @@
-console.log('Its working')
+console.log('Website Inspiration: https://youtu.be/3PmPkZJ22Cc')
+console.log('Website Template: https://youtu.be/r_hYR53r61M')
+console.log('Website + Infra Code: https://github.com/vyrwu/portfolio-website')
+console.log(`Cheers!`)
 
 let theme = localStorage.getItem('theme')
 
@@ -14,7 +17,6 @@ let themeDots = document.getElementsByClassName('theme-dot')
 for (var i=0; themeDots.length > i; i++){
 	themeDots[i].addEventListener('click', function(){
 		let mode = this.dataset.mode
-		console.log('Option clicked:', mode)
 		setTheme(mode)
 	})
 }
