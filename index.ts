@@ -88,9 +88,6 @@ getAllFiles(siteFilesDir).map((filePath: string) => {
   })
 })
 
-export const bucketName = contentBucket.bucket;
-export const websiteUrl = contentBucket.websiteEndpoint;
-
 // CREATE CLOUDFRONT DISTIBUTON
 const logsBucket = new aws.s3.Bucket('requestLogs', {
   bucket: `${domainName}-logs`,
@@ -190,3 +187,5 @@ new aws.route53.Record(
   },
   { dependsOn: cert }
 )
+
+export const websiteUrls = cdn.aliases
