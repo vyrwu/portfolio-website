@@ -62,45 +62,25 @@ const contentBucket = new aws.s3.Bucket(
   'content',
   {
     bucket: domainName,
-    website: {
-      indexDocument: 'index.html',
-      errorDocument: '404.html',
-    },
     tags: tags,
   },
   { dependsOn: certValidation }
 )
 
-function publicReadPolicyForBucket(bucketName: string): aws.iam.PolicyDocument {
-  return {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Effect: 'Allow',
-        Principal: '*',
-        Action: ['s3:GetObject'],
-        Resource: [
-          `arn:aws:s3:::${bucketName}/*`, // policy refers to bucket name explicitly
-        ],
-      },
-    ],
-  }
-}
-
-new aws.s3.BucketPolicy('content-policy', {
-  bucket: contentBucket.bucket,
-  policy: contentBucket.bucket.apply(publicReadPolicyForBucket),
-})
-
 const siteFilesDir = 'www' // directory for content files
 
 getAllFiles(siteFilesDir).map((filePath: string) => {
-  return new aws.s3.BucketObject(filePath.replace('www/', ''), {
-    bucket: contentBucket,
-    source: new pulumi.asset.FileAsset(filePath),
-    contentType: mime.getType(filePath) || undefined,
-    tags: tags,
-  })
+  return new aws.s3.BucketObject(
+    filePath.replace('www/', ''),
+    {
+      acl: 'public-read',
+      bucket: contentBucket,
+      source: new pulumi.asset.FileAsset(filePath),
+      contentType: mime.getType(filePath) || undefined,
+      tags: tags,
+    },
+    { parent: contentBucket }
+  )
 })
 
 // CREATE CLOUDFRONT DISTIBUTON
@@ -110,64 +90,85 @@ const logsBucket = new aws.s3.Bucket('requestLogs', {
   tags: tags,
 })
 
-const originAccessIdentity = new aws.cloudfront.OriginAccessIdentity('s3-private-access', {
+const originAccessIdentity = new aws.cloudfront.OriginAccessIdentity('cdn-oai', {
   comment: 'this is needed to setup s3 polices and make s3 not public.',
 })
 
-const cdn = new aws.cloudfront.Distribution('cdn', {
-  enabled: true,
-  aliases: [`www.${domainName}`, domainName],
-  origins: [
-    {
-      originId: contentBucket.arn,
-      domainName: contentBucket.websiteEndpoint,
-      //     s3OriginConfig: {
-      //         originAccessIdentity: originAccessIdentity.cloudfrontAccessIdentityPath,
-      // },
-      customOriginConfig: {
-        httpPort: 80,
-        httpsPort: 443,
-        originProtocolPolicy: 'http-only',
-        originSslProtocols: ['TLSv1', 'TLSv1.1', 'TLSv1.2'],
+const bucketPolicy = new aws.s3.BucketPolicy('allow-cdn-read-bucket', {
+  bucket: contentBucket.id,
+  policy: pulumi
+    .all([originAccessIdentity.iamArn, contentBucket.arn])
+    .apply(([oaiArn, bucketArn]) =>
+      JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: {
+              AWS: oaiArn,
+            },
+            Action: ['s3:GetObject'],
+            Resource: [`${bucketArn}/*`],
+          },
+        ],
+      })
+    ),
+})
+
+const cdn = new aws.cloudfront.Distribution(
+  'cdn',
+  {
+    enabled: true,
+    aliases: [`www.${domainName}`, domainName],
+    origins: [
+      {
+        originId: contentBucket.arn,
+        domainName: contentBucket.bucketDomainName,
+        s3OriginConfig: {
+          originAccessIdentity: originAccessIdentity.cloudfrontAccessIdentityPath,
+        },
+      },
+    ],
+
+    defaultRootObject: 'index.html',
+
+    // A CloudFront distribution can configure different cache behaviors based on the request path.
+    // Here we just specify a single, default cache behavior which is just read-only requests to S3.
+    defaultCacheBehavior: {
+      targetOriginId: contentBucket.arn,
+      viewerProtocolPolicy: 'redirect-to-https',
+      allowedMethods: ['GET', 'HEAD', 'OPTIONS'],
+      cachedMethods: ['GET', 'HEAD', 'OPTIONS'],
+      forwardedValues: {
+        cookies: { forward: 'none' },
+        queryString: false,
+      },
+      minTtl: 0,
+      defaultTtl: 600, // 10 minutes
+      maxTtl: 600, // 10 minutes
+    },
+    customErrorResponses: [{ errorCode: 404, responseCode: 404, responsePagePath: '/404.html' }],
+    priceClass: 'PriceClass_100',
+    restrictions: {
+      geoRestriction: {
+        restrictionType: 'none',
       },
     },
-  ],
-
-  defaultRootObject: 'index.html',
-  customErrorResponses: [{ errorCode: 404, responseCode: 404, responsePagePath: '/404.html' }],
-
-  // A CloudFront distribution can configure different cache behaviors based on the request path.
-  // Here we just specify a single, default cache behavior which is just read-only requests to S3.
-  defaultCacheBehavior: {
-    targetOriginId: contentBucket.arn,
-    viewerProtocolPolicy: 'redirect-to-https',
-    allowedMethods: ['GET', 'HEAD', 'OPTIONS'],
-    cachedMethods: ['GET', 'HEAD', 'OPTIONS'],
-    forwardedValues: {
-      cookies: { forward: 'none' },
-      queryString: false,
+    viewerCertificate: {
+      acmCertificateArn: cert.arn,
+      sslSupportMethod: 'sni-only',
     },
-    minTtl: 0,
-    defaultTtl: 600, // 10 minutes
-    maxTtl: 600, // 10 minutes
-  },
-  priceClass: 'PriceClass_100',
-  restrictions: {
-    geoRestriction: {
-      restrictionType: 'none',
+    loggingConfig: {
+      bucket: logsBucket.bucketDomainName,
+      includeCookies: false,
+      prefix: `${domainName}/`,
     },
+    tags: tags,
   },
-  viewerCertificate: {
-    acmCertificateArn: cert.arn,
-    sslSupportMethod: 'sni-only',
-  },
-  loggingConfig: {
-    bucket: logsBucket.bucketDomainName,
-    includeCookies: false,
-    prefix: `${domainName}/`,
-  },
-  tags: tags,
-})
+  {
+    dependsOn: bucketPolicy,
+  }
+)
 
 new aws.route53.Record(
   `cdn-${domainName}`,
