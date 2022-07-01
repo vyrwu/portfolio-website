@@ -207,7 +207,6 @@ new aws.route53.Record(
 export const websiteUrls = cdn.aliases
 
 // TODO:
-// - Make S3 private
 // - Retain 7 days of access logs
 // - Price alert
 // - Consider writing about alerting project on Medium, or as portfolio element.
