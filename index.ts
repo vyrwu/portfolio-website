@@ -204,6 +204,20 @@ new aws.route53.Record(
   { dependsOn: cert }
 )
 
+// Google Domain Verification
+const pulumiConfig = new pulumi.Config()
+new aws.route53.Record(
+  `google-verify-${domainName}`,
+  {
+    name: domainName,
+    zoneId: zone.then((z: aws.route53.GetZoneResult) => z.id),
+    type: 'TXT',
+    records: [pulumiConfig.requireSecret(`google-site-verification-record-${domainName}`)],
+    ttl: 300,
+  },
+  { dependsOn: cert }
+)
+
 export const websiteUrls = cdn.aliases
 
 // TODO:

@@ -1,3 +1,5 @@
 config:
   aws:region: eu-west-1
+  portfolio-website:google-site-verification-record-devanowak.com:
+    secure: AAABALs/CbotrW231yjeYVbva4/8C5NxYmhaiYKwgtYnf970Isaz/q6zwnwtE+rkD1tbD4m22fnI5AHNx6HoP+OGHpbD34rAdNASDXNdIfA5P1YSHw96EYdAREbRqXX3bxUSCQ==
   pulumi:template: aws-typescript
